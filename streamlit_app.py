@@ -48,7 +48,7 @@ if not st.session_state["logged_in"]:
     else:
         col_l, col_m, col_r = st.columns([1, 1, 1])
         with col_m:
-            st.markdown("<h2 style='text-align:center;'>🔐 Sistem Survey Lot PUO</h2>", unsafe_allow_html=True)
+            st.markdown("<h2 style='text-align:center;'>🔐 Sistem Survey Lot </h2>", unsafe_allow_html=True)
             user_id = st.text_input("ID Pengguna")
             user_pwd = st.text_input("Kata Laluan", type="password")
             if st.button("Masuk", use_container_width=True):
