@@ -67,7 +67,7 @@ if not st.session_state["logged_in"]:
 # --- SIDEBAR ---
 with st.sidebar:
     try:
-        st.image("politeknik-ungku-umar-seeklogo-removebg-preview.png", use_container_width=True)
+        st.image("LOGO PUO.png", use_container_width=True)
     except:
         st.warning("⚠️ Logo tidak dijumpai.")
     
