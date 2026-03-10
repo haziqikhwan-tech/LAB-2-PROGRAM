@@ -8,14 +8,14 @@ import json
 from folium.plugins import Fullscreen, MousePosition
 
 # --- TETAPAN ASAS HALAMAN ---
-st.set_page_config(page_title="Sistem Lot Geomatik PUO", layout="wide")
+st.set_page_config(page_title="LOT GEOMATIK PUO", layout="wide")
 
 # --- DATABASE PENGGUNA (SIMULASI) ---
 if "user_db" not in st.session_state:
     st.session_state["user_db"] = {
-        "1": {"nama": "Admin", "pwd": "123"},
-        "01dgu24f1043": {"nama": "Alif", "pwd": "123"},
-        "01dgu24f1013": {"nama": "Nafiz", "pwd": "123"}
+        "01dgu24f1061": {"nama": "Acap", "pwd": "123"},
+        "01dgu24f1058": {"nama": "Haziq", "pwd": "123"},
+        "01dgu24f1050": {"nama": "Norul", "pwd": "123"}
     }
 
 if "logged_in" not in st.session_state:
