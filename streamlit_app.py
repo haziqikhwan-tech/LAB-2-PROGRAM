@@ -48,7 +48,7 @@ if not st.session_state["logged_in"]:
     else:
         col_l, col_m, col_r = st.columns([1, 1, 1])
         with col_m:
-            st.markdown("<h2 style='text-align:center;'>🔐 Sistem Survey Lot </h2>", unsafe_allow_html=True)
+            st.markdown("<h2 style='text-align:center;'>🔐 Sistem Survey Lot PUO</h2>", unsafe_allow_html=True)
             user_id = st.text_input("ID Pengguna")
             user_pwd = st.text_input("Kata Laluan", type="password")
             if st.button("Masuk", use_container_width=True):
@@ -100,7 +100,7 @@ with st.sidebar:
 
 # --- HEADER UTAMA ---
 st.markdown("<h1 style='text-align:center;'>POLITEKNIK UNGKU OMAR</h1>", unsafe_allow_html=True)
-st.markdown("<h3 style='text-align:center; color:#555;'>Unit Geomatik - Visualisasi & Eksport Rich-Data</h3>", unsafe_allow_html=True)
+st.markdown("<h3 style='text-align:center; color:#555;'>Unit Geomatik - Sistem Visualisasi & Eksport GIS</h3>", unsafe_allow_html=True)
 st.divider()
 
 # --- LOGIK PEMPROSESAN ---
@@ -109,14 +109,14 @@ if uploaded_file:
         df = pd.read_csv(uploaded_file)
         df.columns = df.columns.str.strip().str.upper()
         
-        # Transformasi Koordinat
+        # Transformasi Koordinat (RSO ke WGS84)
         transformer = Transformer.from_crs(f"EPSG:{epsg_input}", "EPSG:4326", always_xy=True)
         df['lon'], df['lat'] = transformer.transform(df['E'].values, df['N'].values)
         
         center_lat, center_lon = df['lat'].mean(), df['lon'].mean()
         m = folium.Map(location=[center_lat, center_lon], zoom_start=19, max_zoom=22, tiles=None)
         
-        # Logik Paparan Peta
+        # 1. Paparan Peta (Website)
         if show_satellite:
             folium.TileLayer(
                 tiles='https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', 
@@ -132,89 +132,115 @@ if uploaded_file:
         points_list = []
         total_dist = 0
 
-        # Loop untuk Garisan & Titik
+        # Loop Pemprosesan Geometri
         for i in range(len(df)):
             p1 = df.iloc[i]
             p2 = df.iloc[(i + 1) % len(df)]
             loc1, loc2 = [p1['lat'], p1['lon']], [p2['lat'], p2['lon']]
             points_list.append(loc1)
 
-            # Kira Data Ukur
+            # Kira Bearing & Jarak
             dE, dN = p2['E'] - p1['E'], p2['N'] - p1['N']
             dist = np.sqrt(dE**2 + dN**2)
             total_dist += dist
             brg = np.degrees(np.arctan2(dE, dN)) % 360
             
-            # GeoJSON Data (Point)
+            # --- DATA UNTUK EKSPORT GEOJSON (LINE) ---
+            features_for_geojson.append({
+                "type": "Feature",
+                "geometry": {
+                    "type": "LineString",
+                    "coordinates": [[p1['lon'], p1['lat']], [p2['lon'], p2['lat']]]
+                },
+                "properties": {
+                    "Info": "Sempadan Lot",
+                    "Dari_Stn": int(p1['STN']),
+                    "Ke_Stn": int(p2['STN']),
+                    "Bearing": decimal_to_dms(brg),
+                    "Jarak_m": round(dist, 3)
+                }
+            })
+
+            # --- DATA UNTUK EKSPORT GEOJSON (POINT) ---
             features_for_geojson.append({
                 "type": "Feature",
                 "geometry": {"type": "Point", "coordinates": [p1['lon'], p1['lat']]},
-                "properties": {"Stesen": int(p1['STN']), "N_RSO": p1['N'], "E_RSO": p1['E']}
+                "properties": {
+                    "Stesen": int(p1['STN']), 
+                    "N_RSO": round(p1['N'], 3), 
+                    "E_RSO": round(p1['E'], 3)
+                }
             })
 
-            # Visual di Website (Titik Stesen)
+            # --- PAPARAN VISUAL PADA PETA (STREMLIT) ---
             if show_points:
-                # --- BAHAGIAN KEMASKINI KOORDINAT ---
-                pop_info = f"""
-                <div style="font-family: Arial; font-size: 12px; width: 160px;">
-                    <b style="color: red; font-size: 14px;">STN: {int(p1['STN'])}</b><hr style="margin: 5px 0;">
-                    <b>N (RSO):</b> {p1['N']:.3f}<br>
-                    <b>E (RSO):</b> {p1['E']:.3f}<hr style="margin: 5px 0;">
-                    <b>Lat:</b> {p1['lat']:.7f}<br>
-                    <b>Lon:</b> {p1['lon']:.7f}
+                # Popup maklumat koordinat (Kembali Berfungsi)
+                stn_info = f"""
+                <div style='font-family: sans-serif;'>
+                <b>STESEN {int(p1['STN'])}</b><hr>
+                <b>N:</b> {p1['N']:.3f}<br>
+                <b>E:</b> {p1['E']:.3f}<br>
                 </div>
                 """
                 folium.CircleMarker(
-                    loc1, 
-                    radius=6, 
-                    color='red', 
-                    fill=True, 
-                    fill_color='yellow',
-                    popup=folium.Popup(pop_info, max_width=200) # Klik untuk lihat koordinat
+                    location=loc1, radius=6, color='red', fill=True, fill_color='yellow',
+                    popup=folium.Popup(stn_info, max_width=150),
+                    tooltip=f"Klik untuk koordinat Stesen {int(p1['STN'])}"
                 ).add_to(m)
-            
+
             if show_stn:
-                folium.Marker(loc1, icon=folium.DivIcon(html=f'<div style="color:white; font-weight:bold; font-size:{size_stn}pt; text-shadow: 1px 1px 2px black;">{int(p1["STN"])}</div>')).add_to(m)
-            
+                stn_txt = f'<div style="color:white; font-weight:bold; font-size:{size_stn}pt; text-shadow: 2px 2px 3px black; pointer-events:none;">{int(p1["STN"])}</div>'
+                folium.Marker(loc1, icon=folium.DivIcon(html=stn_txt, icon_anchor=(-10, 10))).add_to(m)
+
             if show_brg:
                 calc_angle = brg - 90
                 if 90 < brg < 270: calc_angle -= 180 
-                l_html = f'<div style="transform: rotate({calc_angle}deg); color:#00FFFF; font-size:{size_brg}pt; font-weight:bold; text-shadow: 1px 1px 2px black; text-align:center; width:120px; margin-left:-60px;">{decimal_to_dms(brg)}<br>{dist:.3f}m</div>'
+                l_html = f'<div style="transform: rotate({calc_angle}deg); color:#00FFFF; font-size:{size_brg}pt; font-weight:bold; text-shadow: 2px 2px 4px black; text-align:center; width:120px; margin-left:-60px;">{decimal_to_dms(brg)}<br><span style="color:#FFD700;">{dist:.3f}m</span></div>'
                 folium.Marker([(p1['lat']+p2['lat'])/2, (p1['lon']+p2['lon'])/2], icon=folium.DivIcon(html=l_html)).add_to(m)
 
-        # Poligon & Luas
+        # 4. KIRA LUAS & DATA EKSPORT POLIGON
         area_m2 = 0.5 * np.abs(np.dot(df['E'], np.roll(df['N'], 1)) - np.dot(df['N'], np.roll(df['E'], 1)))
         
+        poly_coords = [[ [p['lon'], p['lat']] for _, p in df.iterrows() ]]
+        poly_coords[0].append([df.iloc[0]['lon'], df.iloc[0]['lat']]) # Close poligon
+
+        features_for_geojson.append({
+            "type": "Feature",
+            "geometry": {"type": "Polygon", "coordinates": poly_coords},
+            "properties": {
+                "Info": "Keluasan Keseluruhan",
+                "Luas_m2": round(area_m2, 2),
+                "Luas_Ekar": round(area_m2 * 0.000247105, 3),
+                "Perimeter_m": round(total_dist, 2)
+            }
+        })
+
         if show_poly:
-            poly_info = f"""
-            <div style="font-family: Arial; width: 150px;">
-                <b style="font-size: 14px;">Maklumat Lot</b><hr>
-                <b>Luas:</b> {area_m2:.2f} m²<br>
-                <b>Luas:</b> {area_m2 * 0.000247105:.3f} Ekar<br>
-                <b>Perimeter:</b> {total_dist:.2f} m
-            </div>
-            """
             folium.Polygon(
-                locations=points_list, 
-                color=p_color, 
-                fill=True, 
-                fill_color=f_color, 
-                fill_opacity=f_opac,
-                popup=folium.Popup(poly_info, max_width=250)
+                locations=points_list, color=p_color, weight=3,
+                fill=True, fill_color=f_color, fill_opacity=f_opac,
+                popup=f"Luas: {area_m2:.2f} m²"
             ).add_to(m)
 
-        # Sidebar Metrics & Export
+        # Sidebar Output
         st.sidebar.markdown("---")
-        st.sidebar.subheader("📊 Analisis Lot")
+        st.sidebar.subheader("📊 Keputusan Analisis")
         st.sidebar.metric("Luas (m²)", f"{area_m2:.2f}")
+        st.sidebar.metric("Perimeter (m)", f"{total_dist:.2f}")
         
+        # Download GeoJSON
         geojson_final = {"type": "FeatureCollection", "features": features_for_geojson}
-        st.sidebar.download_button("📥 Export GeoJSON", json.dumps(geojson_final, indent=4), "lot_puo.geojson", "application/json", use_container_width=True)
+        st.sidebar.download_button(
+            label="📥 Export GeoJSON (Data Lengkap)",
+            data=json.dumps(geojson_final, indent=4),
+            file_name="lot_geomatik_lengkap.geojson",
+            mime="application/json",
+            use_container_width=True
+        )
 
-        # Paparan Peta Utama
         st_folium(m, width="100%", height=700, returned_objects=[])
 
     except Exception as e:
-        st.error(f"Ralat: {e}")
+        st.error(f"Ralat Pemprosesan: {e}")
 else:
-    st.info("Sila muat naik fail CSV untuk melihat paparan satelit dan memproses data.")
+    st.info("Sila muat naik fail CSV untuk memulakan visualisasi.")
