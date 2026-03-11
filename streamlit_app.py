@@ -77,7 +77,7 @@ with st.sidebar:
     uploaded_file = st.file_uploader("📂 Upload CSV (STN, E, N)", type=["csv"])
     
     st.header("👁️ Kawalan Paparan")
-    show_satellite = st.toggle("Imej Satelit (Google)", value=True) # KEMBALI ADA
+    show_satellite = st.toggle("Imej Satelit (Google)", value=True)
     show_points = st.checkbox("Paparkan Titik Stesen", value=True)
     show_stn = st.checkbox("Paparkan No Stesen", value=True)
     show_brg = st.checkbox("Paparkan Bearing/Jarak", value=True)
@@ -109,6 +109,11 @@ if uploaded_file:
         df = pd.read_csv(uploaded_file)
         df.columns = df.columns.str.strip().str.upper()
         
+        # Semakan Kolum
+        if not {'STN', 'E', 'N'}.issubset(df.columns):
+            st.error("Fail CSV mesti mempunyai kolum STN, E, dan N")
+            st.stop()
+
         # Transformasi Koordinat
         transformer = Transformer.from_crs(f"EPSG:{epsg_input}", "EPSG:4326", always_xy=True)
         df['lon'], df['lat'] = transformer.transform(df['E'].values, df['N'].values)
@@ -116,7 +121,7 @@ if uploaded_file:
         center_lat, center_lon = df['lat'].mean(), df['lon'].mean()
         m = folium.Map(location=[center_lat, center_lon], zoom_start=19, max_zoom=22, tiles=None)
         
-        # Logik Paparan Peta (Website)
+        # Layer Peta
         if show_satellite:
             folium.TileLayer(
                 tiles='https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', 
@@ -145,7 +150,7 @@ if uploaded_file:
             total_dist += dist
             brg = np.degrees(np.arctan2(dE, dN)) % 360
             
-            # 1. MASUKKAN DATA BEARING & JARAK KE GEOJSON (LINE)
+            # --- GEOJSON DATA ---
             features_for_geojson.append({
                 "type": "Feature",
                 "geometry": {
@@ -161,59 +166,71 @@ if uploaded_file:
                 }
             })
 
-            # 2. MASUKKAN DATA STESEN KE GEOJSON (POINT)
-            features_for_geojson.append({
-                "type": "Feature",
-                "geometry": {"type": "Point", "coordinates": [p1['lon'], p1['lat']]},
-                "properties": {"Stesen": int(p1['STN']), "N_RSO": p1['N'], "E_RSO": p1['E']}
-            })
-
-            # Visual di Website
+            # --- VISUAL DI MAP ---
             if show_points:
-                folium.CircleMarker(loc1, radius=6, color='red', fill=True, fill_color='yellow').add_to(m)
+                # Popup maklumat stesen
+                stn_popup = f"<b>Stesen: {int(p1['STN'])}</b><br>N: {p1['N']:.3f}<br>E: {p1['E']:.3f}"
+                folium.CircleMarker(
+                    loc1, radius=6, color='red', fill=True, fill_color='yellow',
+                    popup=folium.Popup(stn_popup, max_width=200)
+                ).add_to(m)
+
             if show_stn:
-                folium.Marker(loc1, icon=folium.DivIcon(html=f'<div style="color:white; font-weight:bold; font-size:{size_stn}pt; text-shadow: 1px 1px 2px black;">{int(p1["STN"])}</div>')).add_to(m)
+                folium.Marker(
+                    loc1, 
+                    icon=folium.DivIcon(html=f'<div style="color:white; font-weight:bold; font-size:{size_stn}pt; text-shadow: 1px 1px 2px black;">{int(p1["STN"])}</div>')
+                ).add_to(m)
+
             if show_brg:
                 calc_angle = brg - 90
                 if 90 < brg < 270: calc_angle -= 180 
                 l_html = f'<div style="transform: rotate({calc_angle}deg); color:#00FFFF; font-size:{size_brg}pt; font-weight:bold; text-shadow: 1px 1px 2px black; text-align:center; width:120px; margin-left:-60px;">{decimal_to_dms(brg)}<br>{dist:.3f}m</div>'
                 folium.Marker([(p1['lat']+p2['lat'])/2, (p1['lon']+p2['lon'])/2], icon=folium.DivIcon(html=l_html)).add_to(m)
 
-        # 3. MASUKKAN DATA LUAS KE GEOJSON (POLYGON)
+        # --- DATA LUAS & POLIGON ---
         area_m2 = 0.5 * np.abs(np.dot(df['E'], np.roll(df['N'], 1)) - np.dot(df['N'], np.roll(df['E'], 1)))
         
-        poly_coords = [[ [p['lon'], p['lat']] for _, p in df.iterrows() ]]
-        poly_coords[0].append([df.iloc[0]['lon'], df.iloc[0]['lat']]) # Close loop
-
-        features_for_geojson.append({
-            "type": "Feature",
-            "geometry": {"type": "Polygon", "coordinates": poly_coords},
-            "properties": {
-                "Info": "Poligon Lot",
-                "Luas_m2": round(area_m2, 2),
-                "Luas_Ekar": round(area_m2 * 0.000247105, 3),
-                "Perimeter_m": round(total_dist, 2)
-            }
-        })
-
         if show_poly:
-            folium.Polygon(locations=points_list, color=p_color, fill=True, fill_color=f_color, fill_opacity=f_opac).add_to(m)
+            # Popup maklumat poligon
+            poly_popup = f"""
+            <div style="width:150px">
+                <b>Maklumat Lot</b><br>
+                Luas: {area_m2:.2f} m²<br>
+                Luas: {area_m2 * 0.000247105:.3f} Ekar<br>
+                Perimeter: {total_dist:.2f} m
+            </div>
+            """
+            folium.Polygon(
+                locations=points_list, color=p_color, fill=True, fill_color=f_color, fill_opacity=f_opac,
+                popup=folium.Popup(poly_popup, max_width=200)
+            ).add_to(m)
 
-        # Download Sidebar
+        # Download Sidebar & Metrics
         st.sidebar.markdown("---")
         st.sidebar.subheader("📊 Analisis Lot")
         st.sidebar.metric("Luas (m²)", f"{area_m2:.2f}")
         
+        # Sediakan GeoJSON untuk eksport
+        poly_coords = [[ [p['lon'], p['lat']] for _, p in df.iterrows() ]]
+        poly_coords[0].append([df.iloc[0]['lon'], df.iloc[0]['lat']])
+        
+        features_for_geojson.append({
+            "type": "Feature",
+            "geometry": {"type": "Polygon", "coordinates": poly_coords},
+            "properties": {"Info": "Poligon Lot", "Luas_m2": round(area_m2, 2)}
+        })
+
         geojson_final = {"type": "FeatureCollection", "features": features_for_geojson}
         st.sidebar.download_button(
-            "📥 Export GeoJSON (Data Lengkap)", 
+            "📥 Export GeoJSON", 
             json.dumps(geojson_final, indent=4), 
             "lot_lengkap_puo.geojson", 
             "application/json", 
             use_container_width=True
         )
 
-        st_folium(m, width="100%", height=700)
+        # Paparkan Peta
+        st_folium(m, width="100%", height=700, returned_objects=[])
 
     except Exception as e:
         st.error(f"Ralat: {e}")
