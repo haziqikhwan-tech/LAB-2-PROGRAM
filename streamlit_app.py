@@ -116,7 +116,7 @@ if uploaded_file:
         center_lat, center_lon = df['lat'].mean(), df['lon'].mean()
         m = folium.Map(location=[center_lat, center_lon], zoom_start=19, max_zoom=22, tiles=None)
         
-        # 1. Paparan Peta (Website)
+        # Paparan Peta Website
         if show_satellite:
             folium.TileLayer(
                 tiles='https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', 
@@ -132,7 +132,7 @@ if uploaded_file:
         points_list = []
         total_dist = 0
 
-        # Loop Pemprosesan Geometri
+        # Loop Pemprosesan
         for i in range(len(df)):
             p1 = df.iloc[i]
             p2 = df.iloc[(i + 1) % len(df)]
@@ -145,7 +145,7 @@ if uploaded_file:
             total_dist += dist
             brg = np.degrees(np.arctan2(dE, dN)) % 360
             
-            # --- DATA UNTUK EKSPORT GEOJSON (LINE) ---
+            # GeoJSON (LINE)
             features_for_geojson.append({
                 "type": "Feature",
                 "geometry": {
@@ -161,7 +161,7 @@ if uploaded_file:
                 }
             })
 
-            # --- DATA UNTUK EKSPORT GEOJSON (POINT) ---
+            # GeoJSON (POINT)
             features_for_geojson.append({
                 "type": "Feature",
                 "geometry": {"type": "Point", "coordinates": [p1['lon'], p1['lat']]},
@@ -172,16 +172,9 @@ if uploaded_file:
                 }
             })
 
-            # --- PAPARAN VISUAL PADA PETA (STREMLIT) ---
+            # Visual Website
             if show_points:
-                # Popup maklumat koordinat (Kembali Berfungsi)
-                stn_info = f"""
-                <div style='font-family: sans-serif;'>
-                <b>STESEN {int(p1['STN'])}</b><hr>
-                <b>N:</b> {p1['N']:.3f}<br>
-                <b>E:</b> {p1['E']:.3f}<br>
-                </div>
-                """
+                stn_info = f"<b>STESEN {int(p1['STN'])}</b><hr>N: {p1['N']:.3f}<br>E: {p1['E']:.3f}"
                 folium.CircleMarker(
                     location=loc1, radius=6, color='red', fill=True, fill_color='yellow',
                     popup=folium.Popup(stn_info, max_width=150),
@@ -198,45 +191,50 @@ if uploaded_file:
                 l_html = f'<div style="transform: rotate({calc_angle}deg); color:#00FFFF; font-size:{size_brg}pt; font-weight:bold; text-shadow: 2px 2px 4px black; text-align:center; width:120px; margin-left:-60px;">{decimal_to_dms(brg)}<br><span style="color:#FFD700;">{dist:.3f}m</span></div>'
                 folium.Marker([(p1['lat']+p2['lat'])/2, (p1['lon']+p2['lon'])/2], icon=folium.DivIcon(html=l_html)).add_to(m)
 
-        # 4. KIRA LUAS & DATA EKSPORT POLIGON
+        # 4. KIRA LUAS & PERIMETER
         area_m2 = 0.5 * np.abs(np.dot(df['E'], np.roll(df['N'], 1)) - np.dot(df['N'], np.roll(df['E'], 1)))
+        area_acre = area_m2 * 0.000247105
         
         poly_coords = [[ [p['lon'], p['lat']] for _, p in df.iterrows() ]]
-        poly_coords[0].append([df.iloc[0]['lon'], df.iloc[0]['lat']]) # Close poligon
+        poly_coords[0].append([df.iloc[0]['lon'], df.iloc[0]['lat']])
 
+        # Masukkan perimeter ke dalam GeoJSON poligon
         features_for_geojson.append({
             "type": "Feature",
             "geometry": {"type": "Polygon", "coordinates": poly_coords},
             "properties": {
-                "Info": "Keluasan Keseluruhan",
+                "Info": "Maklumat Lot",
                 "Luas_m2": round(area_m2, 2),
-                "Luas_Ekar": round(area_m2 * 0.000247105, 3),
+                "Luas_Ekar": round(area_acre, 3),
                 "Perimeter_m": round(total_dist, 2)
             }
         })
 
         if show_poly:
+            # Popup poligon dengan Perimeter
+            poly_popup = f"""
+            <div style='font-family: sans-serif; min-width: 150px;'>
+            <b style='color: #2c3e50;'>ANALISIS LOT</b><hr>
+            <b>Luas:</b> {area_m2:.2f} m²<br>
+            <b>Luas:</b> {area_acre:.3f} Ekar<br>
+            <b>Perimeter:</b> {total_dist:.3f} m
+            </div>
+            """
             folium.Polygon(
                 locations=points_list, color=p_color, weight=3,
                 fill=True, fill_color=f_color, fill_opacity=f_opac,
-                popup=f"Luas: {area_m2:.2f} m²"
+                popup=folium.Popup(poly_popup, max_width=250)
             ).add_to(m)
 
-        # Sidebar Output
+        # Sidebar Analysis
         st.sidebar.markdown("---")
         st.sidebar.subheader("📊 Keputusan Analisis")
         st.sidebar.metric("Luas (m²)", f"{area_m2:.2f}")
+        st.sidebar.metric("Luas (Ekar)", f"{area_acre:.4f}")
         st.sidebar.metric("Perimeter (m)", f"{total_dist:.2f}")
         
-        # Download GeoJSON
         geojson_final = {"type": "FeatureCollection", "features": features_for_geojson}
-        st.sidebar.download_button(
-            label="📥 Export GeoJSON (Data Lengkap)",
-            data=json.dumps(geojson_final, indent=4),
-            file_name="lot_geomatik_lengkap.geojson",
-            mime="application/json",
-            use_container_width=True
-        )
+        st.sidebar.download_button("📥 Export GeoJSON (Data Lengkap)", json.dumps(geojson_final, indent=4), "lot_geomatik_puo.geojson", "application/json", use_container_width=True)
 
         st_folium(m, width="100%", height=700, returned_objects=[])
 
